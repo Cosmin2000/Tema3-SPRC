@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  mqtt:
+    image: eclipse-mosquitto:latest
+    container_name: mqtt_cont
+    hostname: mqtt
+    volumes:
+      - ./data:/mosquitto/data
+      - ./conf:/mosquitto/config
+    ports:
+      - 1883:1883
+    networks:
+      - broker-adapter-network
+    restart: unless-stopped
+  
+  influxdb:
+    image: influxdb:latest
+    restart: always
+    container_name: influxdb
+    hostname: influxdb
+    volumes:
+      - db-volume:/var/lib/influxdb
+    environment:
+      - INFLUXDB_DB=influxdb
+    networks:
+      - database-adapter-network
+      - database-grafana-network
+
+  # grafana:
+  #   image: grafana/grafana
+  #   container_name: grafana_cont
+  #   restart: always
+  #   volumes:
+  #     - grafana-volume:/var/lib/grafana
+  #   depends_on:
+  #     - influxdb
+  #   ports:
+  #     - 80:3000
+  #   environment:
+  #     - GF_SECURITY_ADMIN_USER=asistent
+  #     - GF_SECURITY_ADMIN_PASSWORD=grafanaSPRC2021
+  #   networks:
+  #     - database-grafana-network
+
+  adapter:
+    depends_on:
+      # - "grafana"
+      - "mqtt"
+      - "influxdb"
+    build: ./adapter
+    hostname: adapter
+    container_name: adapter
+    volumes:
+      - ./adapter/:/tmp/app
+    command: ["./wait-for-it.sh", "influxdb:8086","--", "python3" , "tema.py"]
+    environment:
+      - DEBUG_DATA_FLOW=true
+    networks:
+      - broker-adapter-network
+      - database-adapter-network
+
+  generator:
+    depends_on:
+      - "mqtt"
+      - "influxdb"
+    build: ./generator
+    hostname: generator
+    container_name: generator
+    volumes:
+      - ./generator/:/tmp/app
+    command: ["./wait-for-it.sh", "mqtt:1883","--", "python" , "generator.py"]
+    networks:
+      - broker-adapter-network
+      
+volumes:
+  conf:
+  # grafana-volume:
+  db-volume:
+  data:
+
+networks:
+  broker-adapter-network:
+    driver: bridge
+  database-adapter-network:
+    driver: bridge
+  database-grafana-network:
+    driver: bridge
+
+
+
